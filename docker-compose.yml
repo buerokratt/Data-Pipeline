@@ -1,0 +1,21 @@
+version: '3.8'
+
+volumes:
+  rit-project-data:
+
+services:
+  rit-project:
+    build:
+      context: .
+    command: python main.py
+    container_name: 'rit-project'
+    restart: 'on-failure:3'
+    volumes:
+      - .:/app
+    ports:
+      - '8000:8000'
+
+
+
+
+
