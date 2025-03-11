@@ -1,0 +1,16 @@
+schedule: "0 12 * * *"  # Runs every hour
+
+release_name: scraper-job
+image:
+  repository: ghcr.io/buerokratt/data-pipeline
+  tag: v-1.0.2
+  pullPolicy: IfNotPresent
+  pullSecret: ghcr-secret
+secretName: scraper-secret
+restartPolicy: OnFailure
+
+volume:
+  name: scraper-data
+  mountPath: /app
+
+port: 8000
