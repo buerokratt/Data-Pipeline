@@ -10,7 +10,7 @@ AZURE_API_KEY = Config.AZURE_API_KEY
 
 indexer_url = f"https://{SERVICE_NAME}.search.windows.net/indexers/{INDEXER_NAME}/run?api-version=2024-07-01"
 headers = {
-    "api-key" :AZURE_API_KEY,
+    "api-key" : AZURE_API_KEY,
     "Content-Type" : "application/json"
 }
 def run_index_request():

@@ -7,9 +7,9 @@ import gc
 from logger_config import get_logger
 logger = get_logger(__name__)  
 
-WEB_PAGE_URL = Config.WEB_PAGE_URL
+PORTAL_URL = Config.PORTAL_URL
 raw_data = "raw_data/"
-session = requests.Session()  # Use session for connection reuse
+session = requests.Session()
 
 def make_get_request(url):
     try:
@@ -39,13 +39,17 @@ def save_raw_data(file_name, html_content):
         gc.collect()
         time.sleep(5)
 
-def save_raw_html(data):
+def save_raw_html(data, session):
     for item in data:
-        if 'path' in item and item['path']:
-            url = f"{WEB_PAGE_URL}/{item['path']}"
-            content = make_get_request(url)
+        if "path" in item and item["path"]:
+            url = item["path"]
+            response = session.get(url)
+            content = response.text if response.status_code == 200 else None
+
+            safe_url = url.replace("://", "___").replace("/", "__")
+
             if content:
-                file_name = sanitize_filename(item["title"])
+                file_name = f"{safe_url}.html"
                 save_raw_data(file_name, content)
                 del content
                 gc.collect()

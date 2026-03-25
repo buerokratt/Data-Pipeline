@@ -1,3 +1,4 @@
+
 from azure.storage.blob import BlobServiceClient
 import json
 from utils import read_json, download_image
@@ -14,9 +15,11 @@ BLOB_TEXT_DIR_FILE_PREFIX = "prepared_data/text"
 BLOB_IMAGES_DIR_FILE_PREFIX = "prepared_data/image"
 PARSE_DIR = "parsed_data/"
 
+
 def init():
     client = BlobServiceClient.from_connection_string(CONNECTION_STR)
     return client
+
 
 def parse_blob_url(url):
     # Not the best way of doing it, but it works.
@@ -26,14 +29,17 @@ def parse_blob_url(url):
     filename = url.split('/')[-1]
     return blob, container, filepath, filename
 
+
 def get_full_image_url(dir_name, file_name):
     pairs = CONNECTION_STR.split(";")
     parsed_dict = dict(pair.split("=", 1) for pair in pairs)
     return f'{parsed_dict["DefaultEndpointsProtocol"]}://{parsed_dict["AccountName"]}.blob.{parsed_dict["EndpointSuffix"]}/{BLOB_CONTAINER_NAME}/{BLOB_IMAGES_DIR_FILE_PREFIX}/{dir_name}/{file_name}'
 
+
 def get_client(connection_str):
     return BlobServiceClient.from_connection_string(connection_str)
     
+
 def upload_blob_file(blob_service_client: BlobServiceClient, container_name: str, file_name, data, overwrite=True):
         logger.info('>>> uploading file from blob')
         blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_name)
@@ -41,7 +47,8 @@ def upload_blob_file(blob_service_client: BlobServiceClient, container_name: str
         blob_client.close()
         logger.info('<<< uploading file from blob')
 
-def upload_to_blob(data, client):
+
+def upload_to_blob(data, client, session, dry_run=False):
     if client:
         downloaded_images = []
         for e in data: 
@@ -54,30 +61,46 @@ def upload_to_blob(data, client):
                     new_imgurls = []
                     for imgurl in imgurl_list:
                         if imgurl not in downloaded_images:
-                            image_data = download_image(imgurl)
+                            image_data = download_image(imgurl, session)
                             if image_data:
                                 blob_name = imgurl.split('/')[-1]
-                                full_image_path = f'{BLOB_IMAGES_DIR_FILE_PREFIX}/{title}/{blob_name}'
-                                full_image_url = get_full_image_url(title, blob_name)
-                                new_imgurls.append(full_image_url)
-                                upload_blob_file(client, BLOB_CONTAINER_NAME, full_image_path, image_data)
+
+                                if dry_run:
+                                    local_dir = f"debug_images/{title}"
+                                    os.makedirs(local_dir, exist_ok=True)
+
+                                    local_path = os.path.join(local_dir, blob_name)
+
+                                    with open(local_path, "wb") as f:
+                                        f.write(image_data.getvalue())
+
+                                    logger.info(f"[DRY RUN] Saved image locally: {local_path}")
+
+                                    new_imgurls.append(local_path)
+
+                                else:
+                                    full_image_path = f'{BLOB_IMAGES_DIR_FILE_PREFIX}/{title}/{blob_name}'
+                                    full_image_url = get_full_image_url(title, blob_name)
+
+                                    new_imgurls.append(full_image_url)
+                                    
+                                    upload_blob_file(client, BLOB_CONTAINER_NAME, full_image_path, image_data)
+
                                 image_data = None
                             downloaded_images.append(imgurl)
                     content['imgurl'] = new_imgurls
                 full_text_path = f'{BLOB_TEXT_DIR_FILE_PREFIX}/{title}.json'
         logger.info(f"full_text_path: {full_text_path}")
         upload_blob_file(client, BLOB_CONTAINER_NAME, full_text_path, json.dumps(data))
-                
-                
-                
 
-def upload_by_one():
+
+def upload_by_one(session, dry_run):
     client = init()
     for root, _, files in os.walk(PARSE_DIR):
         for file in files:
             if file.endswith(".json"):
                 parse_file_path = os.path.join(root, file)
                 data = read_json(parse_file_path)
-                upload_to_blob(data, client)
+                upload_to_blob(data, client, session, dry_run)
                 data = None
                 time.sleep(1)
