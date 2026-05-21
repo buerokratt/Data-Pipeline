@@ -80,11 +80,10 @@ def get_menu():
         data = r.json()
 
         for item in data["items"]:
-            article_id = item["id"]
-            tenant_id = item["tenantId"]
             title = item["title"]
+            path = item["publicPage"]["path"]
 
-            url = f"{Config.PORTAL_URL}/juhendid/{tenant_id}/{article_id}"
+            url = f"{Config.PORTAL_URL}/juhendid{path}"
 
             menu_items.append({
                 "title": title,

@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 RAW_DIR = "raw_data"
 PARSE_DIR = "parsed_data"
 
-CHUNK_SIZE = 1800
+CHUNK_SIZE = 1900
 CHUNK_OVERLAP = 100
 
 PORTAL_URL = Config.PORTAL_URL
@@ -101,7 +101,15 @@ def inject_image_placeholders(soup):
             src = PORTAL_URL + src
         src = encode_url(src)
 
-        placeholder = f"[IMAGE_{counter}]"
+        # IMAGE REPLACEMENT
+        # placeholder = f"[IMAGE_{counter}]"
+
+        # IMAGE FULL URLS
+        # placeholder = f"[{src}]"
+
+        # REMOVE IMAGES
+        placeholder = ""
+
         image_map[placeholder] = src
 
         img.replace_with(placeholder)
@@ -122,8 +130,15 @@ def extract_cell_text_with_links(cell: Tag) -> str:
             href = child.get("href", "").strip()
             if link_text:
                 parts.append(f"{link_text} ({href})")
-        elif isinstance(child, str):
-            text = clean_text(child)
+        
+        elif isinstance(child, NavigableString):
+            if any(
+                isinstance(parent, Tag) and parent.name == "a"
+                for parent in child.parents
+            ):
+                continue
+            
+            text = clean_text(str(child))
             if text:
                 parts.append(text)
 
@@ -178,10 +193,10 @@ def table_to_markdown(table_tag):
 def headings_to_markdown(soup):
     for h2 in soup.find_all("h2"):
         text = clean_text(h2.get_text())
-        h2.replace_with(NavigableString(f"\n\n## {text}\n"))
+        h2.replace_with(NavigableString(f"__DNL__## {text}__NL__"))
     for h3 in soup.find_all("h3"):
         text = clean_text(h3.get_text())
-        h3.replace_with(NavigableString(f"\n\n### {text}\n"))
+        h3.replace_with(NavigableString(f"__DNL__### {text}__NL__"))
     return soup
 
 
@@ -264,7 +279,6 @@ def extract_and_remove_tables(soup):
         except Exception as e:
             print(f"Warning: failed converting table to markdown: {e}")
         
-        # Remove table so it doesn't get duplicated
         try:
             table.decompose()
         except:
@@ -312,7 +326,7 @@ def extract_and_remove_cards(soup):
         except Exception as e:
             print(f"Warning: failed extracting card content: {e}")
 
-        # Remove card so it doesn't get duplicated
+        # Remove card
         try:
             card.decompose()
         except:
@@ -366,6 +380,9 @@ def pre_clean_html(soup):
             if isinstance(classes, str):
                 classes = classes.split()
             if any(tok in classes for tok in deny_tokens):
+                if tag.name == "a" and tag.get("href"):
+                    continue
+
                 tag.decompose()
         except:
             pass
@@ -422,38 +439,8 @@ def html_chunk_to_text(html_chunk: str) -> str:
 
     structured_output = []
 
-    for element in soup.find_all(["p", "h1", "h2", "h3", "h4", "li", "br", "a", "img"]):
-        if element.name == "a":
-            link_text = element.get_text(strip=True)
-            link_href = element.get("href", "").strip()
-            if link_text:
-                structured_output.append(f"{link_text} ({link_href})")
-            continue
-
-        text_content = []
-
-        for child in element.children:
-            if isinstance(child, str):
-                text_content.append(child.strip())
-            elif isinstance(child, Tag):
-                if child.name == "a":
-                    link_text = child.get_text(strip=True)
-                    link_href = child.get("href", "").strip()
-                    if link_text:
-                        text_content.append(f"{link_text} ({link_href})")
-                else:
-                    text_content.append(child.get_text(strip=True))
-
-        final_text = " ".join(text_content).strip()
-        if final_text:
-            final_text = re.sub(r'(?<=[a-zA-Z0-9])\.(?=[A-Z])', '. ', final_text)
-
-        if element.name == "li":
-            structured_output.append(f"- {final_text}")
-        else:
-            structured_output.append(final_text)
-
     formatted_text = "\n".join(structured_output)
+
     if not formatted_text:
         formatted_text = soup.get_text(separator="\n", strip=True)
 
@@ -527,22 +514,51 @@ def create_json_with_text_from_html(html_file, output_file, source_url, chunk_si
             rebuilt.append(current)
 
         return rebuilt
+    
+    def preserve_lists(soup):
+        for ol in soup.find_all("ol"):
+            items = []
+
+            for idx, li in enumerate(ol.find_all("li", recursive=False), start=1):
+                text = clean_text(li.get_text(" ", strip=True))
+                items.append(f"__NL__{idx}. {text}")
+
+            ol.replace_with(" ".join(items))
+
+        for ul in soup.find_all("ul"):
+            items = []
+
+            for li in ul.find_all("li", recursive=False):
+                text = clean_text(li.get_text(" ", strip=True))
+                items.append(f"__NL__- {text}")
+
+            ul.replace_with(" ".join(items))
+
+        return soup
 
     # Add cards as standalone chunks
     for card_text in markdown_cards:
         json_data.append({
             "content": {
                 "chunk": card_text,
-                "imgurl": images,
+                # "imgurl": images,
+                "imgurl": "",
                 "title": title,
                 "description": description,
                 "source_url": full_url
             }
         })
 
+    soup = preserve_lists(soup)
+
     remaining_html = str(soup)
+
     sem_splitter = HTMLSemanticPreservingSplitter(
-        headers_to_split_on=[("h1","h1"),("h2","h2"),("h3","h3")],
+        headers_to_split_on=[
+            ("h1","h1"),
+            ("h2","h2"),
+            ("h3","h3")
+        ],
         separators=["\n\n", "\n"],
         denylist_tags=["nav", "header", "aside", "footer", "menu", "script", "style", "title"],
         max_chunk_size=chunk_size * 3
@@ -570,6 +586,11 @@ def create_json_with_text_from_html(html_file, output_file, source_url, chunk_si
 
         for c in sub_chunks:
             text, images = html_chunk_to_text(c)
+            text = (
+                text
+                .replace("__DNL__", "\n\n")
+                .replace("__NL__", "\n")
+            )
             text = clean_text(text)
 
             images = extract_images_from_text(text, image_map)
@@ -584,7 +605,8 @@ def create_json_with_text_from_html(html_file, output_file, source_url, chunk_si
             json_data.append({
                 "content": {
                     "chunk": chunk,
-                    "imgurl": images,
+                    # "imgurl": images,
+                    "imgurl": "",
                     "title": title,
                     "description": description,
                     "source_url": full_url
@@ -612,3 +634,6 @@ def chunk_and_parse():
                     create_json_with_text_from_html(raw_file_path, parse_file_path, source_url)
                 except Exception as e:
                     print(f"Failed to process {raw_file_path}: {e}")
+
+if __name__ == "__main__":
+    chunk_and_parse()
