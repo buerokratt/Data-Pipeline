@@ -1,40 +1,39 @@
-from playwright.sync_api import sync_playwright
-from requests.adapters import HTTPAdapter, Retry
 import requests
+
 from config.app_config import Config
+from logger_config import get_logger
 
+logger = get_logger(__name__)
 
-def get_authenticated_session():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+def get_bearer_token() -> str:
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": Config.KC_CLIENT_ID,
+        "client_secret": Config.KC_CLIENT_SECRET,
+    }
 
-        page.goto(Config.PORTAL_URL)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
 
-        page.fill("input[name='username']", Config.USERNAME)
-        page.fill("input[name='password']", Config.PASSWORD)
-        page.click("button[type='submit']")
+    logger.info("Requesting bearer token...")
 
-        page.wait_for_url(f"{Config.PORTAL_URL}/{Config.LANDING}")
-
-        cookies = context.cookies()
-        browser.close()
-
-    cookie_dict = {c["name"]: c["value"] for c in cookies}
-
-    session = requests.Session()
-    session.cookies.update(cookie_dict)
-
-    retries = Retry(
-        total=5,
-        backoff_factor=0.3,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["GET"]
+    r = requests.post(
+        Config.KC_TOKEN_URL,
+        data=data,
+        headers=headers,
+        timeout=30
     )
 
-    adapter = HTTPAdapter(max_retries=retries)
+    logger.info(f"Response status: {r.status_code}")
 
-    session.mount("https://", adapter)
+    r.raise_for_status()
 
-    return session
+    response_json = r.json()
+
+    if "access_token" not in response_json:
+        raise Exception("No access token found in response")
+    
+    logger.info("Bearer token fetched successfully")
+
+    return response_json["access_token"]

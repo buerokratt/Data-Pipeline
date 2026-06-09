@@ -1,62 +1,85 @@
 import sys
 import argparse
 
-from utils import get_menu,delete_dir
-from crawler import save_raw_html
-from parser import chunk_and_parse
-from blob_handler import upload_by_one
-from search_indexer import run_index_request
 from config.app_config import Config
+from api_client import APIClient
 from logger_config import get_logger
+from auth_portal import get_bearer_token
+from crawler import get_all_articles, save_raw_articles
+from parser import parse_article, log_unknown_nodes, save_parsed_blob
+from chunker import chunk_article
+# from blob_formatter import build_article_blob
+# from parsed_writer import save_parsed_blob
+from blob_handler import build_article_blob, upload_article_blob, mark_blob_deleted, purge_deleted_blobs
+from manifest_handler import write_manifest, read_latest_manifest, diff_manifests
+from trigger_indexer import run_index_request
+from utils import delete_dir
 
-logger = get_logger(__name__)  
+logger = get_logger(__name__)
+
 
 def main():
-    parser = argparse.ArgumentParser(description="RAG ingestion pipeline")
+    parser = argparse.ArgumentParser(description="ADF ingestion pipeline")
 
     parser.add_argument(
         "--mode",
-        choices=["urls", "crawl", "crawl-images", "full"],
+        choices=["crawl", "full"],
         default="full",
-        help="urls = only print URLs, crawl = download + parse, crawl-images = crawl + save images locally, full = entire pipeline",
+        help="crawl = download + parse to local directory, full = entire pipeline with upload",
     )
 
     args = parser.parse_args()
+    client = APIClient(get_bearer_token)
+    articles = get_all_articles(client)
 
-    session, menu_items = get_menu()
-
-    if menu_items is None:
-        logger.error("Menu_items is none")
+    if articles is None:
+        logger.error("No articles found. Sad.")
         sys.exit(1)
 
-    logger.info(f"Found {len(menu_items)} menu items")
+    page_ids = [a["pageId"] for a in articles]
+    previous_manifest = read_latest_manifest()
+    diff = diff_manifests(previous_manifest, page_ids)
 
-    # Print URLs only
-    if args.mode == "urls":
-        for item in menu_items:
-            print(f'{item["title"]} -> {item["path"]}')
-        return
+    for page_id in diff["deleted"]:
+        logger.info(f"Soft deleting article: {page_id}")
+        mark_blob_deleted(page_id)
 
-    save_raw_html(menu_items, session)
-    chunk_and_parse()
+    logger.info(f"Added: {len(diff['added'])}")
+    logger.info(f"Deleted: {len(diff['deleted'])}")
+    logger.info(f"Unchanged: {len(diff['unchanged'])}")
 
-    # Crawl and parse only
-    if args.mode == "crawl":
-        logger.info("Crawl + parse finished (no upload)")
-        return
-    
-    # Download images locally
-    # TODO: dry run won't upload any scraped data to blob
-    if args.mode == "crawl-images":
-        logger.info("Downloading images locally (dry run)")
-        upload_by_one(session, dry_run=True)
-        return
+    save_raw_articles(articles)
 
-    # Full pipeline
-    upload_by_one(session, dry_run=False)
-    run_index_request()
-    delete_dir("parsed_data")
-    delete_dir("raw_data")
+    if args.mode in ["crawl", "full"]:
+        success = True
+
+        try:
+            for article in articles:
+                parsed = parse_article(article)
+                chunks = chunk_article(parsed)
+                blob_doc = build_article_blob(parsed, chunks)
+
+                if args.mode in ["crawl"]:
+                    save_parsed_blob(blob_doc)
+                    logger.info("Articles saved locally.")
+                
+                if args.mode in ["full"]:
+                    upload_article_blob(parsed.page_id, blob_doc)
+
+        except Exception:
+            success = False
+            raise
+        finally:
+            if success and args.mode in ["full"]:
+                write_manifest(page_ids)
+                run_index_request()
+                purged = purge_deleted_blobs(retention_days=7)
+                logger.info("Purged %s expired deleted blobs", purged)
+
+        log_unknown_nodes()
+        delete_dir(Config.RAW_DATA)
+        delete_dir(Config.PARSED_DATA)
+
 
 if __name__ == "__main__":
     main()
