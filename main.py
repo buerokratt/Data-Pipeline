@@ -8,8 +8,6 @@ from auth_portal import get_bearer_token
 from crawler import get_all_articles, save_raw_articles
 from parser import parse_article, log_unknown_nodes, save_parsed_blob
 from chunker import chunk_article
-# from blob_formatter import build_article_blob
-# from parsed_writer import save_parsed_blob
 from blob_handler import build_article_blob, upload_article_blob, mark_blob_deleted, purge_deleted_blobs
 from manifest_handler import write_manifest, read_latest_manifest, diff_manifests
 from trigger_indexer import run_index_request
@@ -78,7 +76,9 @@ def main():
 
         log_unknown_nodes()
         delete_dir(Config.RAW_DATA)
-        delete_dir(Config.PARSED_DATA)
+        
+        if args.mode in ["crawl"]:
+            delete_dir(Config.PARSED_DATA)
 
 
 if __name__ == "__main__":
