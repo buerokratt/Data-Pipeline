@@ -1,60 +1,59 @@
+import requests 
 import re
-import json
 import os
-
 from config.app_config import Config
-from api_client import APIClient
+import time
+import gc
 from logger_config import get_logger
+logger = get_logger(__name__)  
 
-logger = get_logger(__name__)
+PORTAL_URL = Config.PORTAL_URL
+raw_data = "raw_data/"
+session = requests.Session()
 
-raw_data = Config.RAW_DATA
+def make_get_request(url):
+    try:
+        with session.get(url, stream=True, timeout=10) as r:
+            if r.status_code == 200:
+                return r.text
+    except requests.exceptions.RequestException as e:
+        logger.info(f"Request failed: {e}")
+    return ""
 
+def sanitize_filename(file_name):
+    sanitized_title = re.sub(r'[<>:"/\\|?*;]', '', file_name.replace(" ", "_"))
+    return f"{sanitized_title}.html"
 
-def get_all_articles(client: APIClient):
-    page = 1
-    size = 10
+def save_raw_data(file_name, html_content):
+    """file_name already contains .html part"""
+    file_dir = "raw_data"
+    file_path = os.path.join(file_dir, file_name)
+    os.makedirs(file_dir, exist_ok=True)
+    logger.info(f"Saving raw HTML file: {file_name}")
+    
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(html_content)
+    except MemoryError:
+        logger.info(f"Memory error while writing {file_name}. Retrying after cleanup.")
+        gc.collect()
+        time.sleep(5)
 
-    articles = []
+def save_raw_html(data, session):
+    for item in data:
+        if "path" in item and item["path"]:
+            url = item["path"]
+            response = session.get(url)
+            content = response.text if response.status_code == 200 else None
 
-    while True:
-        logger.info(f"Fetching page {page}")
+            safe_url = url.replace("://", "___").replace("/", "__")
 
-        response = client.get(
-            Config.PORTAL_ENDPOINT, params={"page": page, "size": size}
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-        items = data.get("items", [])
-
-        logger.info(f"Fetched {len(items)} articles")
-
-        articles.extend(items)
-
-        if not data.get("hasNext"):
-            break
-
-        page += 1
-
-    logger.info(f"Total articles fetched: {len(articles)}")
-
-    return articles
-
-
-def save_raw_articles(articles, output_dir=raw_data):
-    os.makedirs(output_dir, exist_ok=True)
-
-    for article in articles:
-        page_id = article["pageId"]
-        title = article["title"]
-
-        sanitized_title = re.sub(r'[<>:"/\\|?*;]', "", title.replace(" ", "_"))
-
-        output_path = os.path.join(output_dir, f"raw_{page_id}_{sanitized_title}.json")
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(article, f, ensure_ascii=False, indent=2)
-
-    logger.info(f"Saved {len(articles)} raw articles")
+            if content:
+                file_name = f"{safe_url}.html"
+                save_raw_data(file_name, content)
+                del content
+                gc.collect()
+            else:
+                logger.info("Failed to retrive content from:{s}".format(s=url))
+        else:
+            logger.info(f"No path present in: {item}")

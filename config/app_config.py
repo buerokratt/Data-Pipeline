@@ -4,16 +4,13 @@ from dotenv import load_dotenv
 
 class Config:
     load_dotenv()
-    RAW_DATA = os.environ.get("RAW_DATA", "")
-    PARSED_DATA = os.environ.get("PARSED_DATA", "")
-
     PORTAL_URL = os.environ.get("PORTAL_URL", "")
+    TENANT_ID = os.environ.get("TENANT_ID", "")
+    LANDING = os.environ.get("LANDING", "")
+    SEARCH_URL = f"{PORTAL_URL}/api/v1/guide/search"
 
-    KC_TOKEN_URL = os.environ.get("KC_TOKEN_URL", "")
-    KC_CLIENT_ID = os.environ.get("KC_CLIENT_ID", "")
-    KC_CLIENT_SECRET = os.environ.get("KC_CLIENT_SECRET", "")
-
-    PORTAL_ENDPOINT = os.environ.get("PORTAL_ENDPOINT", "")
+    USERNAME = os.environ.get("USERNAME", "")
+    PASSWORD = os.environ.get("PASSWORD", "")
 
     RESOURCE_URI = os.environ.get("RESOURCE_URI", "")
     AZURE_API_KEY = os.environ.get("AZURE_API_KEY", "")
