@@ -46,6 +46,20 @@ def log_unknown_nodes():
         logger.warning("  %s -> %s", k, v)
 
 
+def build_link_map(links):
+    link_map = {}
+
+    for internal_href, link_data in links.items():
+        public_page = link_data.get("publicPage")
+
+        if public_page:
+            link_map[internal_href] = PORTAL_URL + public_page["path"]
+        else:
+            link_map[internal_href] = internal_href
+
+    return link_map
+
+
 def build_attachment_map(attachments):
     return {
         att["fileId"]: {
@@ -82,8 +96,8 @@ def detect_table_type(table_node):
     return "mixed"
 
 
-def normalize_cell_text(node, attachment_map=None):
-    text = extract_text(node, attachment_map).strip()
+def normalize_cell_text(node, attachment_map=None, link_map=None):
+    text = extract_text(node, attachment_map, link_map).strip()
 
     # collapse whitespace / newlines
     text = " ".join(text.split())
@@ -91,13 +105,13 @@ def normalize_cell_text(node, attachment_map=None):
     return text
 
 
-def join_children(node, attachment_map=None, indent=0):
+def join_children(node, attachment_map=None, link_map=None, indent=0):
     return "".join(
-        extract_text(child, attachment_map, indent) for child in node.get("content", [])
+        extract_text(child, attachment_map, link_map, indent) for child in node.get("content", [])
     )
 
 
-def extract_text(node, attachment_map=None, indent=0):
+def extract_text(node, attachment_map=None, link_map=None, indent=0):
     node_type = node.get("type", "UNKNOWN")
 
     if node_type not in KNOWN_NODE_TYPES:
@@ -113,7 +127,8 @@ def extract_text(node, attachment_map=None, indent=0):
                 href = mark.get("attrs", {}).get("href")
 
                 if href:
-                    text = f"{text} ({href})"
+                    public_url = link_map.get(href, href) if link_map else href
+                    text = f"[{text}]({public_url})"
 
         return text
 
@@ -122,7 +137,7 @@ def extract_text(node, attachment_map=None, indent=0):
 
         return (
             "".join(
-                extract_text(child, attachment_map, indent)
+                extract_text(child, attachment_map, link_map, indent)
                 for child in node.get("content", [])
             )
             + "\n"
@@ -137,7 +152,7 @@ def extract_text(node, attachment_map=None, indent=0):
         lines = []
 
         for item in node.get("content", []):
-            text = extract_text(item, attachment_map, indent + 1)
+            text = extract_text(item, attachment_map, link_map, indent + 1)
 
             lines.append("  " * indent + f"- {text.strip()}")
 
@@ -148,7 +163,7 @@ def extract_text(node, attachment_map=None, indent=0):
         lines = []
 
         for idx, item in enumerate(node.get("content", []), start=1):
-            text = extract_text(item, attachment_map, indent + 1)
+            text = extract_text(item, attachment_map, link_map, indent + 1)
 
             lines.append("  " * indent + f"{idx}. {text.strip()}")
 
@@ -158,7 +173,7 @@ def extract_text(node, attachment_map=None, indent=0):
     if node_type == "listItem":
 
         return "".join(
-            extract_text(child, attachment_map, indent)
+            extract_text(child, attachment_map, link_map, indent)
             for child in node.get("content", [])
         )
 
@@ -176,12 +191,12 @@ def extract_text(node, attachment_map=None, indent=0):
         if table_type == "header_table":
             header_cells = rows[0].get("content", [])
 
-            headers = [normalize_cell_text(cell, attachment_map) for cell in header_cells]
+            headers = [normalize_cell_text(cell, attachment_map, link_map) for cell in header_cells]
 
             for r_idx, row in enumerate(rows[1:], start=1):
                 row_cells = row.get("content", [])
 
-                values = [normalize_cell_text(cell, attachment_map) for cell in row_cells]
+                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in row_cells]
 
                 row_pairs = [f"{h}: {v}" for h, v in zip(headers, values)]
 
@@ -192,7 +207,7 @@ def extract_text(node, attachment_map=None, indent=0):
             for r_idx, row in enumerate(rows, start=1):
                 cells = row.get("content", [])
 
-                values = [normalize_cell_text(cell, attachment_map) for cell in cells]
+                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in cells]
 
                 if len(values) >= 2:
                     output_rows.append(f"[TABLE_ROW {r_idx}] {values[0]}: {values[1]}")
@@ -203,7 +218,7 @@ def extract_text(node, attachment_map=None, indent=0):
         else:
             for r_idx, row in enumerate(rows, start=1):
                 cells = row.get("content", [])
-                values = [normalize_cell_text(cell, attachment_map) for cell in cells]
+                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in cells]
 
                 output_rows.append(f"[TABLE_ROW {r_idx}] " + " | ".join(values))
 
@@ -223,7 +238,7 @@ def extract_text(node, attachment_map=None, indent=0):
 
         return (
             "".join(
-                extract_text(child, attachment_map, indent)
+                extract_text(child, attachment_map, link_map, indent)
                 for child in node.get("content", [])
             )
             + "\n"
@@ -245,7 +260,7 @@ def extract_text(node, attachment_map=None, indent=0):
 
     # panels
     if node_type == "panel":
-        text = join_children(node, indent).strip()
+        text = join_children(node, link_map, indent).strip()
 
         if not text:
             return ""
@@ -254,7 +269,7 @@ def extract_text(node, attachment_map=None, indent=0):
 
     # blockquotes
     if node_type == "blockquote":
-        text = join_children(node, indent).strip()
+        text = join_children(node, link_map, indent).strip()
 
         if not text:
             return ""
@@ -264,7 +279,7 @@ def extract_text(node, attachment_map=None, indent=0):
     # expands
     if node_type == "expand":
         title = node.get("attrs", {}).get("title", "")
-        body = join_children(node, indent).strip()
+        body = join_children(node, link_map, indent).strip()
 
         if title:
             return f"\n[EXPAND: {title}]\n{body}\n[/EXPAND]\n"
@@ -274,7 +289,7 @@ def extract_text(node, attachment_map=None, indent=0):
     # nested expands
     if node_type == "nestedExpand":
         title = node.get("attrs", {}).get("title", "")
-        body = join_children(node, indent).strip()
+        body = join_children(node, link_map, indent).strip()
 
         if title:
             return f"\n[NESTED_EXPAND: {title}]\n{body}\n[/NESTED_EXPAND]\n"
@@ -284,22 +299,22 @@ def extract_text(node, attachment_map=None, indent=0):
     # empty paragraphs
     if node_type == "paragraph":
         content = "".join(
-            extract_text(child, attachment_map, indent)
+            extract_text(child, attachment_map, link_map, indent)
             for child in node.get("content", [])
         )
 
         return content + "\n" if content.strip() else ""
 
     return "".join(
-        extract_text(child, attachment_map, indent) for child in node.get("content", [])
+        extract_text(child, attachment_map, link_map, indent) for child in node.get("content", [])
     )
 
 
-def flatten_content(nodes, attachment_map=None, section_heading=None):
+def flatten_content(nodes, attachment_map=None, link_map=None, section_heading=None):
     parts = []
 
     for node in nodes:
-        text = extract_text(node, attachment_map).strip()
+        text = extract_text(node, attachment_map, link_map).strip()
 
         if not text:
             continue
@@ -314,6 +329,7 @@ def flatten_content(nodes, attachment_map=None, section_heading=None):
 
 def parse_article(article: dict) -> ParsedDocument:
     attachment_map = build_attachment_map(article.get("attachments", []))
+    link_map = build_link_map(article.get("links", {}))
     content_nodes = article["content"]["content"]
 
     sections = []
@@ -334,12 +350,12 @@ def parse_article(article: dict) -> ParsedDocument:
                         heading=current_heading,
                         level=current_level,
                         content=flatten_content(
-                            current_content, attachment_map, current_heading
+                            current_content, attachment_map, link_map, current_heading
                         ),
                     )
                 )
 
-            current_heading = extract_text(node, attachment_map).strip()
+            current_heading = extract_text(node, attachment_map, link_map).strip()
             current_level = node.get("attrs", {}).get("level")
             current_content = []
 
@@ -353,7 +369,7 @@ def parse_article(article: dict) -> ParsedDocument:
                 heading=current_heading,
                 level=current_level,
                 content=flatten_content(
-                    current_content, attachment_map, current_heading
+                    current_content, attachment_map, link_map, current_heading
                 ),
             )
         )
