@@ -1,0 +1,5 @@
+azure-search-documents>=11.6.0
+azure-storage-blob>=12.25.0
+beautifulsoup4>=4.12.3
+python-dotenv>=1.0.1
+requests>=2.32.3
