@@ -8,7 +8,7 @@ services:
     build:
       context: .
     command: python main.py
-    container_name: 'rit-project'
+    container_name: 'eis-project'
     restart: 'on-failure:3'
     volumes:
       - .:/app
