@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.release_name }}
+spec:
+  schedule: "{{ .Values.schedule }}"
+  concurrencyPolicy: "Forbid"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: {{ .Values.restartPolicy }}
+          containers:
+            - name: {{ .Values.release_name }}
+              image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              workingDir: /app
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.secretName }}
+              ports:
+                - containerPort: {{ .Values.port }}
