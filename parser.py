@@ -53,7 +53,7 @@ def build_link_map(links):
         public_page = link_data.get("publicPage")
 
         if public_page:
-            link_map[internal_href] = PORTAL_URL + public_page["path"]
+            link_map[internal_href] = PORTAL_URL + "/juhendid" + public_page["path"]
         else:
             link_map[internal_href] = internal_href
 
@@ -191,12 +191,24 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
         if table_type == "header_table":
             header_cells = rows[0].get("content", [])
 
-            headers = [normalize_cell_text(cell, attachment_map, link_map) for cell in header_cells]
+            headers = [
+                normalize_cell_text(
+                    cell, 
+                    attachment_map=attachment_map, 
+                    link_map=link_map,
+                ) for cell in header_cells
+            ]
 
             for r_idx, row in enumerate(rows[1:], start=1):
                 row_cells = row.get("content", [])
 
-                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in row_cells]
+                values = [
+                    normalize_cell_text(
+                        cell, 
+                        attachment_map=attachment_map, 
+                        link_map=link_map,
+                    ) for cell in row_cells
+                ]
 
                 row_pairs = [f"{h}: {v}" for h, v in zip(headers, values)]
 
@@ -207,7 +219,13 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
             for r_idx, row in enumerate(rows, start=1):
                 cells = row.get("content", [])
 
-                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in cells]
+                values = [
+                    normalize_cell_text(
+                        cell, 
+                        attachment_map=attachment_map, 
+                        link_map=link_map,
+                    ) for cell in cells
+                ]
 
                 if len(values) >= 2:
                     output_rows.append(f"[TABLE_ROW {r_idx}] {values[0]}: {values[1]}")
@@ -218,7 +236,13 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
         else:
             for r_idx, row in enumerate(rows, start=1):
                 cells = row.get("content", [])
-                values = [normalize_cell_text(cell, attachment_map, link_map) for cell in cells]
+                values = [
+                    normalize_cell_text(
+                        cell, 
+                        attachment_map=attachment_map, 
+                        link_map=link_map,
+                    ) for cell in cells
+                ]
 
                 output_rows.append(f"[TABLE_ROW {r_idx}] " + " | ".join(values))
 
@@ -260,7 +284,12 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
 
     # panels
     if node_type == "panel":
-        text = join_children(node, link_map, indent).strip()
+        text = join_children(
+            node, 
+            attachment_map=attachment_map, 
+            link_map=link_map, 
+            indent=indent,
+        ).strip()
 
         if not text:
             return ""
@@ -269,7 +298,12 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
 
     # blockquotes
     if node_type == "blockquote":
-        text = join_children(node, link_map, indent).strip()
+        text = join_children(
+            node, 
+            attachment_map=attachment_map, 
+            link_map=link_map, 
+            indent=indent,
+        ).strip()
 
         if not text:
             return ""
@@ -279,7 +313,12 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
     # expands
     if node_type == "expand":
         title = node.get("attrs", {}).get("title", "")
-        body = join_children(node, link_map, indent).strip()
+        body = join_children(
+            node, 
+            attachment_map=attachment_map, 
+            link_map=link_map, 
+            indent=indent,
+        ).strip()
 
         if title:
             return f"\n[EXPAND: {title}]\n{body}\n[/EXPAND]\n"
@@ -289,7 +328,12 @@ def extract_text(node, attachment_map=None, link_map=None, indent=0):
     # nested expands
     if node_type == "nestedExpand":
         title = node.get("attrs", {}).get("title", "")
-        body = join_children(node, link_map, indent).strip()
+        body = join_children(
+            node, 
+            attachment_map=attachment_map, 
+            link_map=link_map, 
+            indent=indent,
+        ).strip()
 
         if title:
             return f"\n[NESTED_EXPAND: {title}]\n{body}\n[/NESTED_EXPAND]\n"
