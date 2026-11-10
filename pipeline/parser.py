@@ -35,7 +35,7 @@ def parse_document(
                     "title": title,
                     "section_heading": section["heading"],
                     "chunk": text,
-                    "source_url": source_url,
+                    "source_url": build_source_url(source_url, section["page"]),
                 }
             )
 
@@ -51,6 +51,13 @@ def parse_document(
             "html_file_name": payload.get("metadata", {}).get("htmlFileName", ""),
         },
     }
+
+
+def build_source_url(source_url: str, page: str | None) -> str:
+    page = (page or "").strip()
+    if not source_url or not page:
+        return source_url
+    return f"{source_url}#page={page}"
 
 
 def make_deleted_document(
